@@ -1,0 +1,76 @@
+{
+  "name": "CRANEL_QUEC_FLASH_LAYOUT_SS_02M",
+  "partitions": [
+    {
+      "name": "qspi",
+      "format": "flash",
+      "vstart": "0x80000000",
+      "partitions": [
+        {
+          "name": "bootloader",
+          "format": "ubi",
+          "size": "88KiB"
+        },
+        {
+          "name": "system",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "ptable",
+              "format": "raw",
+              "size": "4KiB"
+            },
+            {
+              "name": "rd",
+              "format": "raw",
+              "size": "16KiB"
+            },
+            {
+              "name": "cp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "dsp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "rfbin",
+              "format": "raw",
+              "size": "0"
+            }
+          ]
+        },
+        {
+          "name": "reserved",
+          "format": "raw",
+          "size": "-1"
+        },      	
+		{
+          "name": "nvm",
+          "format": "raw",
+          "size": "100KiB"
+        },
+		{
+          "name": "fota_param",
+          "format": "raw",
+          "size": "12KiB"
+        },
+        {
+          "name": "factory",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "factory_a",
+              "format": "raw",
+              "size": "24KiB"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

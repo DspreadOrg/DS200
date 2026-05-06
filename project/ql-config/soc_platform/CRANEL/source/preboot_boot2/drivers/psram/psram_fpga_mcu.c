@@ -1,0 +1,1580 @@
+#include <stdio.h>
+#include <stdbool.h>
+
+#include "log.h"
+#define LOG_MODULE "PsramFpga"
+#define LOG_LEVEL LOG_LEVEL_MAIN
+
+/* MCU_PSRAM 0x3000_0000 ~ 0x4000_0000 8M,
+ * no psram phy device
+ * defaultly connect AP_8M psram sub-chip for fpga test
+ */
+
+#define REG32(addr) (*(volatile unsigned int *)(addr))
+
+#define FIX_LATENCY
+//#define PSRAM_DUAL_CS
+//#define DDR_FPGA_PHY
+//#define WINBOND
+
+//#define DIS_PSC_CACHE
+
+#define PSRAM_BASE 0x43000000
+
+#if 0
+static int psram_read_mr(unsigned mr_addr, unsigned cs)
+{
+    unsigned read_data = 0;
+
+    // read MR register
+    REG32(PSRAM_BASE + 0x8034) = mr_addr + (cs << 23);
+    REG32(PSRAM_BASE + 0x8030) = 0x109;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+    read_data = REG32(PSRAM_BASE + 0x8038);     // this is the mr read data value
+    LOG_INFO("RB: MR0x%x_CS%d: @[0x%08X]=[0x%08X]\n", mr_addr, cs, (PSRAM_BASE + 0x8034), REG32(PSRAM_BASE + 0x8034));
+    LOG_INFO("RB: MR0x%x_CS%d: @[0x%08X]=[0x%08X]\n", mr_addr, cs, (PSRAM_BASE + 0x8038), read_data);
+
+    return read_data;
+}
+#endif
+
+void psram_init_fpga_mcu(void) // lpddr2_400_init
+{
+    LOG_INFO("psram_init for cranew mcu!!!\n");
+    unsigned read_data;
+    int i;
+    unsigned type = 1;
+
+    if (type == 0) {
+
+        // enable gpio pad for reset
+        REG32(/*APBC_AIB_CLK_RST*/ 0xD4015000 + 0x3c) = 0x3; // 0xFFFFFFFB;
+        for (i = 0; i < 10; i++) {}
+        REG32(/*MPFI_REG_BASE*/ 0xD401E000 + 71 * 4) = (1 << 15) | (1 << 14) | 0x1;
+
+        //enable psram hclk
+        REG32(0xd42828f4) = 0x3;
+        REG32(0xd4282800 + 0x15c) |= 0x50800; //enable pu for dll and phy,and phy_clk rdy
+
+        // PSRAM_BASE = 0xc0100000;
+
+        //enable pll2
+    #ifdef SDF_ON
+        switch (SET_PP_TEST) { //only change tc
+            case  PP_SDF_TC:
+                REG32(0xd4090000 + 0x120) = (0x80 << 24) | (0x50 << 16) | (0xDD << 8) | 0x67;
+                REG32(0xd4090000 + 0x128) = (0x3e << 24) | 0xE27627;
+            default:
+                ;
+        }
+    #endif
+        REG32(0xd4090000 + 0x124) |= 0x3f;
+        REG32(0xd4090000 + 0x128) |= 0x80000000;
+
+
+        //REG32(0xd42828b0) |= (1<<23)|(0x7<<18);   //config for clk
+        //REG32(0xd42828b0) |= (1<<23)|(0x5<<18);   //config for clk
+        REG32(0xd42828b0) |= (1 << 23) | (0x0 << 18); //config for clk
+    } // type==0 end
+    else {
+        // enable gpio pad for reset
+        // update to alwayson for resetn and csn pads
+
+        //REG32(0x41200010)=0x3;
+        //for(i=0; i<10; i++){}
+        //REG32(0x41207000+97*4)|= (1<<15)|(1<<14)|0x1;
+
+    }
+
+#if 1
+
+  #ifdef DDR_FPGA_PHY
+    #ifdef FIX_LATENCY
+      #ifdef WINBOND
+        #ifdef NEG_SAMPLE
+    REG32(PSRAM_BASE + 0x18008) = 0xc7ff;           //neg, fix
+    REG32(PSRAM_BASE + 0x19008) = 0xc7ff;           //neg, fix
+        #else
+    REG32(PSRAM_BASE + 0x18008) = 0x47ff;           //pos, fix
+    REG32(PSRAM_BASE + 0x19008) = 0x47ff;           //pos, fix
+        #endif
+      #else
+        #ifdef NEG_SAMPLE
+    REG32(PSRAM_BASE + 0x18008) = 0xf000;           //neg, fix
+    REG32(PSRAM_BASE + 0x19008) = 0xf000;           //neg, fix
+        #else
+    //REG32(PSRAM_BASE + 0x18008) = 0x7000; //pos, fix
+    //REG32(PSRAM_BASE + 0x19008) = 0x7000; //pos, fix
+    REG32(PSRAM_BASE + 0x18008) = 0xf1ff;           //pos, viable
+    REG32(PSRAM_BASE + 0x19008) = 0xf1ff;           //pos, viable
+    REG32(PSRAM_BASE + 0x1a008) = 0xf1ff;           //pos, viable
+    REG32(PSRAM_BASE + 0x1b008) = 0xf1ff;           //pos, viable
+        #endif
+      #endif
+    #else
+        #ifdef NEG_SAMPLE
+    REG32(PSRAM_BASE + 0x18008) = 0xb000;           //neg, viable
+    REG32(PSRAM_BASE + 0x19008) = 0xb000;           //neg, viable
+        #else
+    REG32(PSRAM_BASE + 0x18008) = 0x3000;           //pos, viable
+    REG32(PSRAM_BASE + 0x19008) = 0x3000;           //pos, viable
+        #endif
+    #endif
+
+  #endif
+
+
+#ifdef  AUHS
+/*REG_C, SEQ_TABLE*/    // APM AUHS Model Enable!
+/*REG_C, Config PSC*/ /*       seq_config_cr*/ REG32(PSRAM_BASE + 0x8008) = 0x43;
+/*REG_C, SEQ_TABLE*/    // AUHS Program RADDR Table!
+/*REG_C, Config PSC*/ /*        raddr_map[1]*/ REG32(PSRAM_BASE + 0x8074) = 0x8e8d8c8b;
+/*REG_C, Config PSC*/ /*        raddr_map[2]*/ REG32(PSRAM_BASE + 0x8078) = 0x9291908f;
+/*REG_C, Config PSC*/ /*        raddr_map[3]*/ REG32(PSRAM_BASE + 0x807c) = 0x96959493;
+/*REG_C, SEQ_TABLE*/ // AUHS Program CADDR Table!
+/*REG_C, Config PSC*/ /*        caddr_map[0]*/ REG32(PSRAM_BASE + 0x8050) = 0x86858483;
+/*REG_C, Config PSC*/ /*        caddr_map[1]*/ REG32(PSRAM_BASE + 0x8054) = 0x8a898887;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h0: RD Cache!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8090) = 0x13100420;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8094) = 0x38000f08;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8098) = 0x9b08;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h1: WR Cache!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80a0) = 0x139004a0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80a4) = 0x38810f88;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80a8) = 0x20819704;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80ac) = 0x2182;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h2: RD Non-Cache!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80b0) = 0x13100400;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80b4) = 0x38000f08;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80b8) = 0x9b02;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h3: WR Non-Cache!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80c0) = 0x13900480;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80c4) = 0x38810f88;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80c8) = 0x20819702;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80cc) = 0x2182;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h5: Global Reset!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80e0) = 0x600344ff;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x80e4) = 0x2910;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h7: HalfSleep Entry!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8100) = 0x60034490;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8104) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h8: CEN low HalfSleep Exit!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8110) = 0x73872c06;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8114) = 0x2c057387;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8118) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h9: RD MR!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8120) = 0xb180440;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8124) = 0x9f0a3800;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8128) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'ha: WR MR DATA0!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8130) = 0x440044c0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8134) = 0x4b087000;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8138) = 0x28036001;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x813c) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'hb: WR MR DATA1!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8140) = 0x440044c0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8144) = 0x4b087001;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8148) = 0x28036001;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x814c) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'hc: WR MR8 INCR 1KB!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8150) = 0x440044c0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8154) = 0x4b087002;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8158) = 0x28036001;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x815c) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h10: SelfRefresh Entry!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8190) = 0x20030450;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8194) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h11: SelfRefresh Exit!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81a0) = 0x4d004d0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81a4) = 0x4d004d0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81a8) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h12: AutoRefresh!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81b0) = 0x200304b0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81b4) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h13: ZQCal!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81c0) = 0x440044c0;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81c4) = 0x44054400;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81c8) = 0x28206001;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81cc) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h14: Single CS HalfSleep Entry!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81d0) = 0x20030490;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81d4) = 0x0;
+/*REG_C: SEQ_TABLE*/ // AUHS LUT 'h15: Single CS CEN low HalfSleep Exit!
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81e0) = 0x73872c06;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81e4) = 0x2c057387;
+/*REG_C: SEQ_TABLE*/ REG32(PSRAM_BASE + 0x81e8) = 0x0;
+/*REG_C: DFC_TABLE*/    //  PROG_DFC_TABLE for Table Type LP_T, start tb_index = 0x28
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3800;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+/*REG_C: DFC_TABLE*/ //  Trig UHS UC Sequence start for HSE_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000010;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x08430 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0xc;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0xc;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2f;
+/*REG_C: DFC_TABLE*/ //  Trig UHS UC Sequence start for SRE_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8430 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x30;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x31;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x32;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=1, phy_rb=0, rx_bias_rbn=0!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x33;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x34;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x35;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=1, phy_rb=1, rx_bias_rbn=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x36;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x37;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x38;
+/*REG_C: DFC_TABLE*/ //  wait dll_lock!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x39;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3a;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=0, phy_rb=1, rx_bias_rbn=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3b;
+/*REG_C: DFC_TABLE*/ //  Trig UHS UC Sequence start for HSX_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000020;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x08430 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0xc;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3d;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_DEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3e;
+/*REG_C: DFC_TABLE*/ //  Trig UHS UC Sequence start for SRX_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000008;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8430 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3f;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x40;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500 | (1 << PS_TABLE_EEXC_IDX);
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x41;
+/*REG_C: DFC_TABLE*/    //  clear seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=0!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x42;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x43;
+/*REG_C: DFC_TABLE*/    //  PROG_DFC_TABLE for Table Type DFC_NCH_T, start tb_index = 0x0
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3800;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x2;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x54084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x4;
+/*REG_C: DFC_TABLE*/    //  clear seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=0!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x5;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x6;
+/*REG_C: DFC_TABLE*/    //  PROG_DFC_TABLE for Table Type DFC_CH_T, start tb_index = 0x8
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3800;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x8;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x9;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xa;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xb;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xc;
+/*REG_C: DFC_TABLE*/ //  set seq_user_cmd.upd_fp=0, upd_fp_wr=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3c00;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xd;
+/*REG_C: DFC_TABLE*/ //  Trigger User Sequence!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8034;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xe;
+/*REG_C: DFC_TABLE*/ //  Trig Sequence start on index=0xa!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3d0a;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0xf;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x10;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x11;
+/*REG_C: DFC_TABLE*/    //  Trigger User Sequence done!
+/*REG_C: DFC_TABLE*/    //  Trig UHS UC Sequence start for SRE_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8430;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x12;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x13;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x14;
+/*REG_C: DFC_TABLE*/ //  set seq_user_cmd.upd_fp=1, upd_fp_wr=0!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3a00;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x15;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=1, phy_rb=0, rx_bias_rbn=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x618;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x16;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x17;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x18;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=1, phy_rb=1, rx_bias_rbn=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x19;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1a;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1b;
+/*REG_C: DFC_TABLE*/ //  wait dll_lock!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1d;
+/*REG_C: DFC_TABLE*/ //  set phy_ovrd_cr, ovrd_en=0, phy_rb=1, rx_bias_rbn=1!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1e;
+/*REG_C: DFC_TABLE*/ //  Trig UHS UC Sequence start for SRX_CMD, cs_all=11, cs=11!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3000008;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x8430;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x1f;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x20;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x48500;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x21;
+/*REG_C: DFC_TABLE*/    //  clear seq_user_cmd.blk_lfq!
+/*REG_C: DFC_TABLE*/    //  set seq_user_cmd.dfc_mode=0!
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x22;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8018) = 0x0;
+/*REG_C: DFC_TABLE*/ REG32(PSRAM_BASE + 0x8010) = 0x23;
+
+
+/*REG_C, Config PSC*/ // Program FP settings for tgt_fp=0!
+/*REG_C, Config PSC*/ /*     fp_mr_data_0[0]*/ REG32(PSRAM_BASE + 0x8024) = 0x3517;
+/*REG_C, Config PSC*/ /*     fp_mr_data_1[0]*/ REG32(PSRAM_BASE + 0x8028) = 0xd0000000;
+/*REG_C, Config PSC*/ /*     fp_dmy_lat_0[0]*/ REG32(PSRAM_BASE + 0x8424) = 0x105;
+/*REG_C, Config PSC*/ /*   fp_seq_idx_cr1[0]*/ REG32(PSRAM_BASE + 0x8420) = 0x100302;
+/*REG_C, Config PSC*/ /*     fp_rw_timing[0]*/ REG32(PSRAM_BASE + 0x8440) = 0x200c0e04;
+/*REG_C, Config PSC*/ /*fp_uhs_ref_idx_cr[0]*/ REG32(PSRAM_BASE + 0x8480) = 0x812;
+/*REG_C, Config PSC*/ /* fp_uhs_sr_idx_cr[0]*/ REG32(PSRAM_BASE + 0x8484) = 0xb111010;
+/*REG_C, Config PSC*/ /* fp_uhs_hs_idx_cr[0]*/ REG32(PSRAM_BASE + 0x8488) = 0x150014;
+/*REG_C, Config PSC*/ /*      uhs_ref_timing*/ REG32(PSRAM_BASE + 0x8460) = 0x65;
+/*REG_C, Config PSC*/ /*    fp_pra_timing[0]*/ REG32(PSRAM_BASE + 0x8444) = 0x25;
+/*REG_C, Config PSC*/ //Program phy settings!
+/*REG_C, Config PSC*/ /*     aphy_cfg_cr3[0]*/ REG32(PSRAM_BASE + 0x1800c) = 0x8bdc0;
+/*REG_C, Config PSC*/ /*    fp_seq_idx_cr[0]*/ REG32(PSRAM_BASE + 0x8020) = 0x4090100;
+/*REG_C, Config PSC*/ // Program FP settings for tgt_fp=1!
+/*REG_C, Config PSC*/ /*     fp_mr_data_0[1]*/ REG32(PSRAM_BASE + 0x9024) = 0x3514;
+/*REG_C, Config PSC*/ /*     fp_mr_data_1[1]*/ REG32(PSRAM_BASE + 0x9028) = 0xd0000000;
+/*REG_C, Config PSC*/ /*     fp_dmy_lat_0[1]*/ REG32(PSRAM_BASE + 0x9424) = 0x610;
+/*REG_C, Config PSC*/ /*   fp_seq_idx_cr1[1]*/ REG32(PSRAM_BASE + 0x9420) = 0x100302;
+/*REG_C, Config PSC*/ /*     fp_rw_timing[1]*/ REG32(PSRAM_BASE + 0x9440) = 0x40200f0d;
+/*REG_C, Config PSC*/ /*fp_uhs_ref_idx_cr[1]*/ REG32(PSRAM_BASE + 0x9480) = 0x1c12;
+/*REG_C, Config PSC*/ /* fp_uhs_sr_idx_cr[1]*/ REG32(PSRAM_BASE + 0x9484) = 0x22113210;
+/*REG_C, Config PSC*/ /* fp_uhs_hs_idx_cr[1]*/ REG32(PSRAM_BASE + 0x9488) = 0x150014;
+/*REG_C, Config PSC*/ /*      uhs_ref_timing*/ REG32(PSRAM_BASE + 0x8460) = 0x65;
+/*REG_C, Config PSC*/ /*    fp_pra_timing[1]*/ REG32(PSRAM_BASE + 0x9444) = 0x49;
+/*REG_C, Config PSC*/ //Program phy settings!
+/*REG_C, Config PSC*/ /*     aphy_cfg_cr3[1]*/ REG32(PSRAM_BASE + 0x1900c) = 0x68bdc0;
+/*REG_C, Config PSC*/ /*    fp_seq_idx_cr[1]*/ REG32(PSRAM_BASE + 0x9020) = 0xb0d0100;
+/*REG_C, Config PSC*/ // Program FP settings for tgt_fp=2!
+/*REG_C, Config PSC*/ /*     fp_mr_data_0[2]*/ REG32(PSRAM_BASE + 0xa024) = 0x3511;
+/*REG_C, Config PSC*/ /*     fp_mr_data_1[2]*/ REG32(PSRAM_BASE + 0xa028) = 0xd0000000;
+/*REG_C, Config PSC*/ /*     fp_dmy_lat_0[2]*/ REG32(PSRAM_BASE + 0xa424) = 0xa19;
+/*REG_C, Config PSC*/ /*   fp_seq_idx_cr1[2]*/ REG32(PSRAM_BASE + 0xa420) = 0x100302;
+/*REG_C, Config PSC*/ /*     fp_rw_timing[2]*/ REG32(PSRAM_BASE + 0xa440) = 0x50300f15;
+/*REG_C, Config PSC*/ /*fp_uhs_ref_idx_cr[2]*/ REG32(PSRAM_BASE + 0xa480) = 0x2c12;
+/*REG_C, Config PSC*/ /* fp_uhs_sr_idx_cr[2]*/ REG32(PSRAM_BASE + 0xa484) = 0x35114c10;
+/*REG_C, Config PSC*/ /* fp_uhs_hs_idx_cr[2]*/ REG32(PSRAM_BASE + 0xa488) = 0x150014;
+/*REG_C, Config PSC*/ /*      uhs_ref_timing*/ REG32(PSRAM_BASE + 0x8460) = 0x65;
+/*REG_C, Config PSC*/ /*    fp_pra_timing[2]*/ REG32(PSRAM_BASE + 0xa444) = 0x38;
+/*REG_C, Config PSC*/ //Program phy settings!
+/*REG_C, Config PSC*/ /*     aphy_cfg_cr3[2]*/ REG32(PSRAM_BASE + 0x1a00c) = 0x68bdc0;
+/*REG_C, Config PSC*/ /*    fp_seq_idx_cr[2]*/ REG32(PSRAM_BASE + 0xa020) = 0x10100100;
+/*REG_C, Config PSC*/ // Program FP settings for tgt_fp=3!
+/*REG_C, Config PSC*/ /*     fp_mr_data_0[3]*/ REG32(PSRAM_BASE + 0xb024) = 0x3513;
+/*REG_C, Config PSC*/ /*     fp_mr_data_1[3]*/ REG32(PSRAM_BASE + 0xb028) = 0xd0000000;
+/*REG_C, Config PSC*/ /*     fp_dmy_lat_0[3]*/ REG32(PSRAM_BASE + 0xb424) = 0xe21;
+/*REG_C, Config PSC*/ /*   fp_seq_idx_cr1[3]*/ REG32(PSRAM_BASE + 0xb420) = 0x100302;
+/*REG_C, Config PSC*/ /*     fp_rw_timing[3]*/ REG32(PSRAM_BASE + 0xb440) = 0x70400f1d;
+/*REG_C, Config PSC*/ /*fp_uhs_ref_idx_cr[3]*/ REG32(PSRAM_BASE + 0xb480) = 0x3c12;
+/*REG_C, Config PSC*/ /* fp_uhs_sr_idx_cr[3]*/ REG32(PSRAM_BASE + 0xb484) = 0x48116710;
+/*REG_C, Config PSC*/ /* fp_uhs_hs_idx_cr[3]*/ REG32(PSRAM_BASE + 0xb488) = 0x150014;
+/*REG_C, Config PSC*/ /*      uhs_ref_timing*/ REG32(PSRAM_BASE + 0x8460) = 0x65;
+/*REG_C, Config PSC*/ /*    fp_pra_timing[3]*/ REG32(PSRAM_BASE + 0xb444) = 0x49;
+/*REG_C, Config PSC*/ //Program phy settings!
+/*REG_C, Config PSC*/ /*     aphy_cfg_cr3[3]*/ REG32(PSRAM_BASE + 0x1b00c) = 0x68bdc0;
+/*REG_C, Config PSC*/ /*    fp_seq_idx_cr[3]*/ REG32(PSRAM_BASE + 0xb020) = 0x16130100;
+
+#else   // ~AUHS
+
+    REG32(PSRAM_BASE + 0x18000 ) = 0x1;
+    for (i = 0; i < 20; i++) {
+        read_data = REG32(PSRAM_BASE + 0x18000);
+    }
+    //for(i=0; i<200; i++) read_data = REG32(PSRAM_BASE + 0x18000) ;
+    REG32(PSRAM_BASE + 0x18000 ) = 0x5;
+
+#ifdef WINBOND
+    for (i = 0; i < 1000; i++) {
+        read_data = REG32(PSRAM_BASE + 0x18000);
+    }
+// address remap
+    REG32(PSRAM_BASE + 0x8078) = 0x87868584;
+    REG32(PSRAM_BASE + 0x807c) = 0x8b8a8988;
+    REG32(PSRAM_BASE + 0x8080) = 0x8f8e8d8c;
+    REG32(PSRAM_BASE + 0x8084) = 0x93929190;
+    REG32(PSRAM_BASE + 0x8088) = 0x97969594;
+    REG32(PSRAM_BASE + 0x808c) = 0x9b9a9998;
+    REG32(PSRAM_BASE + 0x8060) = 0x4838281;
+
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT0: RD 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8090) = 0x93188480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8094) = 0x20048f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8098) = 0x9b043407;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x809c) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT1: WR 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a0) = 0x93188400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a4) = 0x20048f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a8) = 0x97043407;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80ac) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT2: RD 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b0) = 0x93188480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b4) = 0x20058f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b8) = 0x9b043408;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80bc) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT3: WR 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c0) = 0x93188400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c4) = 0x20058f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c8) = 0x97043408;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80cc) = 0x0;
+#ifdef PSRAM_DUAL_CS
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h4: WR CR0 125M!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d0) = 0xc400c460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d4) = 0xc400c401;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0xc400c400;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0xc41bc48f;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0xc413c48f;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e0) = 0x2402;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h6: WR CR0 200M!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f0) = 0xd318c460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f4) = 0xc48fcf10;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x2402c42b;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x2402c423;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80fc) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h7: WR MR6 hybird sleep entry!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8100) = 0xd318c460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8104) = 0xc4ffcf10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8108) = 0x2402c4e2;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x810c) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h8: CEN low halfsleep exit!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8110) = 0x62012880;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8114) = 0x2d606210;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8118) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h9: RD MR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8120) = 0x931884e0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8124) = 0x20048f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8128) = 0x9f043407;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x812c) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'ha: WR MR DATA0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8130) = 0xd318c460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8134) = 0xf000cf10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8138) = 0x2402f001;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x813c) = 0x0;
+
+#else // ~PSRAM_DUAL_CS
+
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h4: WR CR0 125M!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d0) = 0x84008460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d4) = 0x84008401;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0x84008400;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0x840b848f;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0x8403848f;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e0) = 0x2402;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h6: WR CR0 200M!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f0) = 0x93188460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f4) = 0x848f8f10;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x2402842b;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x24028423;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80fc) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h7: WR MR6 hybird sleep entry!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8100) = 0x93188460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8104) = 0x84ff8f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8108) = 0x240284e2;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x810c) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h8: CEN low halfsleep exit!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8110) = 0x22012880;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8114) = 0x2d602210;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8118) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'h9: RD MR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8120) = 0x931884e0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8124) = 0x20048f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8128) = 0x9f043407;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x812c) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // WBD LUT 'ha: WR MR DATA0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8130) = 0x93188460;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8134) = 0xb0008f10;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8138) = 0x2402b001;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x813c) = 0x0;
+
+#endif // ~PSRAM_DUAL_CS end
+
+// tcph and MR byte
+    REG32(PSRAM_BASE + 0x8020) |= 0x04000100;
+    REG32(PSRAM_BASE + 0x9020) |= 0x06000302;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa020) |= 0x06000302;
+    REG32(PSRAM_BASE + 0xb020) |= 0x06000302;
+#ifdef FIX_LATENCY
+    REG32(PSRAM_BASE + 0x8024) = 0x1b8f;
+    REG32(PSRAM_BASE + 0x9024) = 0x2b8f;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa024) = 0x2b8f;
+    REG32(PSRAM_BASE + 0xb024) = 0x2b8f;
+#else
+    REG32(PSRAM_BASE + 0x8024) = 0x138f;
+    REG32(PSRAM_BASE + 0x9024) = 0x238f;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa024) = 0x238f;
+    REG32(PSRAM_BASE + 0xb024) = 0x238f;
+#endif
+#else // !WINBOND
+#ifndef MMAP_ECO_DONE
+// address remap, temp add
+    REG32(PSRAM_BASE + 0x8050) = 0x83828180;
+    REG32(PSRAM_BASE + 0x8054) = 0x87868584;
+    REG32(PSRAM_BASE + 0x8058) = 0x8b8a8988;
+    REG32(PSRAM_BASE + 0x805c) = 0x8f8e8d8c;
+    REG32(PSRAM_BASE + 0x8060) = 0x93929190;
+    REG32(PSRAM_BASE + 0x8064) = 0x97969594;
+    REG32(PSRAM_BASE + 0x8068) = 0x9b9a0098; // mask out bit 25
+    REG32(PSRAM_BASE + 0x806c) = 0x9f9e9d9c;
+
+// /*// SEQ_TABLE*/ LUT0: RD!
+/*[REG_C: SEQ_TABLE]*/ // LUT0: RD 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8090) = 0x8f200400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8094) = 0x9b042004;
+/*[REG_C: SEQ_TABLE]*/ // LUT1: WR 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a0) = 0x8f200480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a4) = 0x97042004;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a8) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT2: RD 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b0) = 0x8f200400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b4) = 0x9b042006;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b8) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT3: WR 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c0) = 0x8f200480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c4) = 0x97042006;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c8) = 0x0;
+#else // MMAP_ECO_DONE
+/*[REG_C: SEQ_TABLE]*/ // LUT0: RD 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8090) = 0x8b200400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8094) = 0x9b042004;
+/*[REG_C: SEQ_TABLE]*/ // LUT1: WR 125!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a0) = 0x8b200480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a4) = 0x97042004;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80a8) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT2: RD 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b0) = 0x8b200400;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b4) = 0x9b042006;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80b8) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT3: WR 200!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c0) = 0x8b200480;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c4) = 0x97042006;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80c8) = 0x0;
+#endif // MMAP_ECO_DONE
+
+#ifdef PSRAM_DUAL_CS
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h4: WR MR0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d0) = 0xc4c0c4c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d4) = 0x44004400;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0x24024431;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0x24024411;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h6: WR MR4!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f0) = 0xcb2044c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f4) = 0x24094420;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x28022c00;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80fc) = 0x2c03;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h5: Global Reset!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e0) = 0x600304ff;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e4) = 0x2820;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h7: WR MR6 halfsleep entry!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8100) = 0x440044c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8104) = 0x44f04406;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8108) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h8: CEN low halfsleep exit!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8110) = 0x60012880;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8114) = 0x2d606010;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8118) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h9: RD MR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8120) = 0x8b200440;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8124) = 0x9f042005;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8128) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'ha: WR MR DATA0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8130) = 0xcb2044c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8134) = 0x24027000;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8138) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hb: WR MR DATA1!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8140) = 0xcb2044c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8144) = 0x24027001;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8148) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hc: WR MR8 INCR 1KB!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8150) = 0xcb2044c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8154) = 0x24027002;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8158) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hd: RD MR CADDR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8160) = 0x8f200440;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8164) = 0x9f042005;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8168) = 0x0;
+#else                   // ~PSRAM_DUAL_CS
+/*[REG_C: SEQ_TABLE]*/  // LUT 'h4: WR MR0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d0) = 0x84c084c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d4) = 0x04000400;
+#ifdef FIX_LATENCY
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0x24020431;
+#else
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80d8) = 0x24020411;
+#endif
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80dc) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h6: WR MR4!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f0) = 0x8b2004c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f4) = 0x24090420;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80f8) = 0x28022c00;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80fc) = 0x2c03;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h5: Global Reset!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e0) = 0x200304ff;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x80e4) = 0x2820;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h7: WR MR6 halfsleep entry!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8100) = 0x040004c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8104) = 0x04f00406;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8108) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h8: CEN low halfsleep exit!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8110) = 0x20012880;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8114) = 0x2d602010;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8118) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'h9: RD MR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8120) = 0x8b200440;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8124) = 0x9f042005;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8128) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'ha: WR MR DATA0!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8130) = 0x8b2004c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8134) = 0x24023000;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8138) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hb: WR MR DATA1!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8140) = 0x8b2004c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8144) = 0x24023001;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8148) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hc: WR MR8 INCR 1KB!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8150) = 0x8b2004c0;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8154) = 0x24023002;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8158) = 0x0;
+/*[REG_C: SEQ_TABLE]*/ // LUT 'hd: RD MR CADDR!
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8160) = 0x8f200440;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8164) = 0x9f042005;
+/*[REG_C: SEQ_TABLE]*/ REG32(PSRAM_BASE + 0x8168) = 0x0;
+
+#endif //~PSRAM_DUAL_CS end
+
+// tcph and MR byte
+    REG32(PSRAM_BASE + 0x8020) |= 0x04000100;
+    REG32(PSRAM_BASE + 0x9020) |= 0x05000302;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa020) |= 0x05000302;
+    REG32(PSRAM_BASE + 0xb020) |= 0x05000302;
+#ifdef FIX_LATENCY
+    REG32(PSRAM_BASE + 0x8024) = 0xc02d;
+    REG32(PSRAM_BASE + 0x9024) = 0x2031;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa024) = 0x2031;
+    REG32(PSRAM_BASE + 0xb024) = 0x2031;
+#else
+    REG32(PSRAM_BASE + 0x8024) = 0xc00d;
+    REG32(PSRAM_BASE + 0x9024) = 0x2011;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa024) = 0x2011;
+    REG32(PSRAM_BASE + 0xb024) = 0x2011;
+#endif
+
+#ifdef  PS_SLREF
+    REG32(PSRAM_BASE + 0x8024) |= 0x480000;
+    REG32(PSRAM_BASE + 0x9024) |= 0x280000;
+// lijin: 2020_06_18-09:18 for 4 FP, 2,3 same as 1
+    REG32(PSRAM_BASE + 0xa024) |= 0x280000;
+    REG32(PSRAM_BASE + 0xb024) |= 0x280000;
+#endif  // PS_SLREF
+
+#endif  // !WINBOND end
+
+#ifdef WINBOND
+#ifdef  HALF_LP_MODE
+//[prog_dfc_table_seq] PROG_DFC_TABLE for Table Type LP_T, start tb_index = 0x28
+//[mcUvmRegDfcScdlrSeq] DFC_TB set seq_user_cmd.blk_lfq!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 5.0: Addr: 8030, Data: 1000, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 5.1: Addr: 803c, Data: 1, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 5.2: Addr: 803c, Data: 1, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 5.3: Addr: 4084, Data: 4, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 5.4: Addr: 4084, Data: 4, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+//[mcUvmRegUpdRWDSSeq] DFC_TB set seq_config_cr.ca_wr_dis=1!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x83;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8008 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+//[mcUvmRegUpdRWDSSeq] Write Reg Tb 5.5: Addr: 8008, Data: 83, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+//[uc_trig_seq_seq] DFC_TB Trigger User Sequence!
+//[uc_trig_seq_seq] LJ_DEBUG, reset_device=0, write_mr0=0, write_mr=0, read_mr=0!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1002;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+//[uc_trig_seq_seq] Write Reg Tb 5.6: Addr: 8034, Data: 1002, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+//[uc_trig_seq_seq] LJ_DEBUG, Trig Sequence start on index=0x7!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1107;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2
+//[uc_trig_seq_seq] Write Reg Tb 5.7: Addr: 8030, Data: 1107, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x30;
+//[uc_trig_seq_seq] Write Reg Tb 6.0: Addr: 8030, Data: 100, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x31;
+//[uc_trig_seq_seq] Write Reg Tb 6.1: Addr: 8030, Data: 0, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+//[uc_trig_seq_seq] LJ_DEBUG, Trig Sequence finish on index=0x7!
+//[uc_trig_seq_seq] DFC_TB Trigger User Sequence done!
+//[mcUvmRegPhyOvrdSeq] DFC_TB set phy_ovrd_cr, ovrd_en=1, phy_rb=0, rx_bias_rbn=0!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x32;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.2: Addr: 8004, Data: 610, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x33;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.3: Addr: 8004, Data: 20, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x34;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.4: Addr: 8004, Data: 20, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 1, EOP: 0, RD=1
+//[mcUvmRegPhyOvrdSeq] DFC_TB set phy_ovrd_cr, ovrd_en=1, phy_rb=1, rx_bias_rbn=1!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x35;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.5: Addr: 8004, Data: 619, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x36;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.6: Addr: 8004, Data: 20, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x37;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 6.7: Addr: 8004, Data: 20, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+//[mcUvmRegWaitDllSeq] DFC_TB wait dll_lock!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x38;
+//[mcUvmRegWaitDllSeq] Write Reg Tb 7.0: Addr: 803c, Data: 80000000, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x39;
+//[mcUvmRegWaitDllSeq] Write Reg Tb 7.1: Addr: 803c, Data: 80000000, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+//[mcUvmRegPhyOvrdSeq] DFC_TB set phy_ovrd_cr, ovrd_en=0, phy_rb=1, rx_bias_rbn=1!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3a;
+//[mcUvmRegPhyOvrdSeq] Write Reg Tb 7.2: Addr: 8004, Data: 609, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+//[uc_trig_seq_seq] DFC_TB Trigger User Sequence!
+//[uc_trig_seq_seq] LJ_DEBUG, reset_device=0, write_mr0=0, write_mr=0, read_mr=0!
+//[uc_trig_seq_seq] LJ_DEBUG, Trig Sequence start on index=0x8!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1108;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3b;
+//[uc_trig_seq_seq] Write Reg Tb 7.3: Addr: 8030, Data: 1108, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3c;
+//[uc_trig_seq_seq] Write Reg Tb 7.4: Addr: 8030, Data: 100, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3d;
+//[uc_trig_seq_seq] Write Reg Tb 7.5: Addr: 8030, Data: 0, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=1
+//[uc_trig_seq_seq] LJ_DEBUG, Trig Sequence finish on index=0x8!
+//[uc_trig_seq_seq] DFC_TB Trigger User Sequence done!
+//[mcUvmRegUpdRWDSSeq] DFC_TB set seq_config_cr.ca_wr_dis=0!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8008 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3e;
+//[mcUvmRegUpdRWDSSeq] Write Reg Tb 7.6: Addr: 8008, Data: 3, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 0, RD=0
+//[mcUvmRegDfcScdlrSeq] DFC_TB clear seq_user_cmd.blk_lfq!
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3f;
+//[mcUvmRegDfcScdlrSeq] Write Reg Tb 7.7: Addr: 8030, Data: 0, REG_WRITE_DISABLE: 0, REQ_PHY: 0, REQ_PMU: 0, EOP: 1, RD=0
+#else   //~HALF_LP_MODE
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type LP_T, start tb_index = 0x28
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2f;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x30;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x31;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x32;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x33;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x34;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x35;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x36;
+#endif  // ~HALF_LP_MODE end
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type DFC_NCH_T, start tb_index = 0x0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x54084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x5;
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type DFC_CH_T, start tb_index = 0x8
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x8;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x9;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xa;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xb;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xc;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1200;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xd;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x618;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xe;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xf;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x10;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x11;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x12;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x13;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x14;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x15;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x16;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x83;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8008;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x17;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x801000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x18;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x130a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x19;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x802000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x130b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1e;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1f;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x3;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8008;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x21;
+#else //!WINBOND
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type LP_T, start tb_index = 0x20
+#ifdef  HALF_LP_MODE
+#ifdef  PS_SLREF
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x21;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x22;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x23;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x24;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034 | (1 << PS_TABLE_DEXC_IDX;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x25;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x110c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x26;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x27;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1107;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2f;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x30;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x31;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x32;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x33;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x34;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1108;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x35;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x36;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x37;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x00004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x38;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x110b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x39;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3c;
+#else   // ~PS_SLREF
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x21;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x22;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x23;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x24;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1107;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x25;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x26;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x27;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2f;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x30;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1108;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x31;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x32;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030 | (1 << PS_TABLE_DEXC_IDX);
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x33;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x34;
+#endif  // ~PS_SLREF end
+#else // ~HALF_LP_MODE
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x21;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x22;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x23;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x24;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x610;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x25;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x26;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x27;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x28;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x29;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2e;
+#endif // ~HALF_LP_MODE end
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type DFC_NCH_T, start tb_index = 0x0
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x2;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x3;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x54084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x5;
+// /*[prog_dfc_table_seq]*/ PROG_DFC_TABLE for Table Type DFC_CH_T, start tb_index = 0x8
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x8;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x9;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xa;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xb;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x44084;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xc;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x1200;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xd;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x618;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xe;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0xf;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x58004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x10;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x619;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x11;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x12;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x20;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x13;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x14;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x80000000;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x4803c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x15;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x609;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8004;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x16;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x17;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x130a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x18;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x19;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1a;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x4;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8034;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x130b;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x8030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1c;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x100;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1d;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x48030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1e;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8014) = 0x0;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8018) = 0x28030;
+/*[REG_C: DFC_TABLE]*/ REG32(PSRAM_BASE + 0x8010) = 0x1f;
+#endif  //!WINBOND
+#endif  // ~AUHS end
+
+    if (type == 0) {
+// lijin: 2021_05_26-16:15 craneW update, after craneL the bug_dis is move from 22:21 to 3:2
+//MMAP
+#ifdef PSRAM_16MB_TMP
+        // REG32(PSRAM_BASE + 0x0004) = 0x7E680001;
+        REG32(PSRAM_BASE + 0x0004) = 0x7E080001 | (3 << 2);
+#else
+ #ifdef PSRAM_DUAL_CS
+        // REG32(PSRAM_BASE + 0x0004) = 0x7E694001;
+        REG32(PSRAM_BASE + 0x0004) = 0x7E084001 | (3 << 2);
+ #else
+        // REG32(PSRAM_BASE + 0x0004) = 0x7E690001;
+        REG32(PSRAM_BASE + 0x0004) = 0x7E070001 | (3 << 2);
+ #endif
+#endif
+    }
+    else {
+        REG32(PSRAM_BASE + 0x0004) = 0x30070001 | (3 << 2);
+    }
+
+#ifdef  AUHS
+// enable UHS_PSRAM_EN
+    REG32(PSRAM_BASE + 0x0004) |= 0x2;
+#endif  // AUHS
+
+
+#ifdef DIS_PSC_CACHE
+    //disable cache
+    read_data = REG32(PSRAM_BASE + 0x4000);
+    read_data = read_data & 0xff0f;
+    REG32(PSRAM_BASE + 0x4000) = read_data;
+    LOG_INFO("PSRAM psc cache disable !!!  \n");
+#else
+    LOG_INFO("PSRAM psc cache enable !!!  \n");
+#endif
+//
+    if (type == 0) {
+        //wait for dll status
+        read_data = REG32(PSRAM_BASE + 0x18010);
+        while ((read_data & 0x100) != 0x100) {
+            read_data = REG32(PSRAM_BASE + 0x18010);
+        }
+
+#if !defined(DDR_FPGA_PHY) && !defined(EN_PSC_AUTODLC)        // auto update dll code
+        read_data = REG32(PSRAM_BASE + 0x14010);
+        read_data &= 0xfffffff7;
+        REG32(PSRAM_BASE + 0x14010) = read_data;
+        // clear auto updated code
+        REG32(PSRAM_BASE + 0x18008) = 0x5605;
+        REG32(PSRAM_BASE + 0x19008) = 0x5605;
+        REG32(PSRAM_BASE + 0x1a008) = 0x5605;
+        REG32(PSRAM_BASE + 0x1b008) = 0x5605;
+#endif  // ~EN_PSC_AUTODLC end
+    } // type==0
+
+#ifdef  AUHS
+
+// enable PSRAM phy for UHS
+/*REG_C, Config PSC*/ REG32(PSRAM_BASE + 0x18004) = 0x2600049e;
+// enable pipe reg for high speed
+/*REG_C, Config PSC*/ REG32(PSRAM_BASE + 0x15008) = 0x32;   // lijin: 2020_11_20-10:37 for larger than 200, use pipe reg
+/*REG_C, Config PSC*/ REG32(PSRAM_BASE + 0x16008) = 0x32;
+/*REG_C, Config PSC*/ REG32(PSRAM_BASE + 0x17008) = 0x32;
+
+    REG32(PSRAM_BASE + 0x14010) |= 0x10;                                            // lijin: 2020_08_10-14:24   enable auhs cken control, replace REG_UHS_PSRAM_EN
+
+/*REG_C, Config PSC*/ /*       uhs_sr_cfg_cr*/ REG32(PSRAM_BASE + 0x8404) = 0x0;    // TODO, auto_sr time
+/*REG_C, Config PSC*/ /*       uhs_hs_cfg_cr*/ REG32(PSRAM_BASE + 0x8408) = 0x4400;
+/*REG_C, Config PSC*/ /*      uhs_pra_cfg_cr*/ REG32(PSRAM_BASE + 0x840c) = 0x35;   // PRA enable, PRA_PR enable for 128B
+    // can set 0x31 for 256B
+// NOTE, must enable after MMAP setting
+/*REG_C, Config PSC*/ /*          uhs_cfg_cr*/ REG32(PSRAM_BASE + 0x8400) = 0x11077f;
+
+    // table entry update
+    read_data = REG32(PSRAM_BASE + 0x8000);
+    read_data &= 0xff00ffff;
+    read_data |= (5 << 16) | (5 << 20);
+    REG32(PSRAM_BASE + 0x8000) = read_data;
+
+    // reset device
+    REG32(PSRAM_BASE + 0x8030) = 0x105;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+    // zqcal
+    REG32(PSRAM_BASE + 0x8030) = 0x113;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+    // wr mr0 for latency
+    REG32(PSRAM_BASE + 0x8034) = 0x0;
+    REG32(PSRAM_BASE + 0x8030) = 0x10a;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+
+    // wr mr2 for enable PRA
+    REG32(PSRAM_BASE + 0x8034) = 0x2;
+    REG32(PSRAM_BASE + 0x8030) = 0x10b;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+
+#else   // ~AUHS
+#ifdef WINBOND
+    // enable phy for winbond
+    read_data = REG32(PSRAM_BASE + 0x18004);
+    read_data |= 1 << (24 + 4);
+    REG32(PSRAM_BASE + 0x18004) = read_data;
+
+    // program MR for
+    // 1. hybird read
+    // 2. fix latency or variable latency
+    REG32(PSRAM_BASE + 0x8030) = 0x104;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+
+    read_data = REG32(PSRAM_BASE + 0x8000);
+    read_data &= 0xff00ffff;
+    read_data |= (5 << 16) | (5 << 20);
+    REG32(PSRAM_BASE + 0x8000) = read_data;
+#else // !WINBOND
+#ifdef FIX_LATENCY
+    REG32(PSRAM_BASE + 0x8030) = 0x104;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+#endif // FIX_LATENCY
+// // lijin: 2018_05_21-18:33 add for swdfc to fp1
+//   REG32(PSRAM_BASE + 0x8000) |= 0x1<<4;
+//   REG32(PSRAM_BASE + 0x8030) |= 0x1<<9;
+//
+//   REG32(PSRAM_BASE + 0x8034) = 0x0;
+//   REG32(PSRAM_BASE + 0x8030) = 0x116;
+//   read_data = REG32(PSRAM_BASE + 0x8030) ;
+//   while ((read_data & 0x100)!=0x0) {
+//      read_data = REG32(PSRAM_BASE + 0x8030) ;
+//   }
+//
+//   REG32(PSRAM_BASE + 0x8034) = 0x4;
+//   REG32(PSRAM_BASE + 0x8030) = 0x117;
+//   read_data = REG32(PSRAM_BASE + 0x8030) ;
+//   while ((read_data & 0x100)!=0x0) {
+//      read_data = REG32(PSRAM_BASE + 0x8030) ;
+//   }
+// // lijin: 2018_05_21-18:34 end
+
+#endif  // !WINBOND
+#endif  // ~AUHS end
+
+//enable DFC
+/*SEQ_TABLE*/ REG32(PSRAM_BASE + 0x8000) |= ((0x1 << 24) | 0x1);
+    if (type == 0) {
+#ifdef DDR_FPGA_PHY
+#else // ~DDR_FPGA_PHY
+ #ifdef SDF_ON
+  #ifdef AUHS
+        read_data = REG32(0xd42828b0); //dclk fc request
+        read_data = read_data & 0xffe3ff87;
+        REG32(0xd42828b0) = 0x01000000 | (0x1 << 26) | (0x4 << 18) | (1 << 6) | (3 << 4) | read_data;
+  #else // ~AUHS
+        read_data = REG32(0xd42828b0); //dclk fc request
+        read_data = read_data & 0xffe3ff87;
+        REG32(0xd42828b0) = 0x01000000 | (0x1 << 26) | (0x1 << 18) | (1 << 6) | (1 << 4) | read_data;
+   #endif // ~AUHS end
+ #else // ~SDF_ON
+   #define PSRAM_HIGH
+   #ifdef PSRAM_HIGH
+        read_data = REG32(0xd42828b0); //dclk fc request
+        read_data = read_data & 0xffe3ff87;
+        REG32(0xd42828b0) = 0x01000000 | (0x1 << 18) | (1 << 6) | (1 << 4) | read_data;
+   #endif   // PSRAM_HIGH end
+ #endif     // ~SDF_ON end
+
+        read_data = REG32(0xd42828b0);
+        while ((read_data & (1 << 24)) != 0) {
+            read_data = REG32(0xd42828b0);
+        }
+
+#endif // ~DDR_FPGA_PHY end
+    } // type==0
+
+    // lijin: 2021_06_02-10:52 TODO, temp read mr for delayline require initial dqs
+    REG32(PSRAM_BASE + 0x8034) = 0x0;
+    REG32(PSRAM_BASE + 0x8030) = 0x109;
+    read_data = REG32(PSRAM_BASE + 0x8030);
+    while ((read_data & 0x100) != 0x0) {
+        read_data = REG32(PSRAM_BASE + 0x8030);
+    }
+    // lijin: 2021_06_02-10:52 end
+
+#endif
+
+#if 0
+    psram_read_mr(0x0, 0);
+    psram_read_mr(0x1, 0);
+    psram_read_mr(0x2, 0);
+    psram_read_mr(0x3, 0);
+    psram_read_mr(0x4, 0);
+
+    psram_read_mr(0x0, 1);
+    psram_read_mr(0x1, 1);
+    psram_read_mr(0x2, 1);
+    psram_read_mr(0x3, 1);
+    psram_read_mr(0x4, 1);
+#endif
+}

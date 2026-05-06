@@ -1,0 +1,46 @@
+  {
+    "name": "CRANEL_QUEC_PRODUCT_8M_8M_OPEN",
+    "version": "0.5",
+    "version-bootrom": "2021.10.16",
+    "template": "CRANEL_QUEC_TEMPLATE_8M_8M_OPEN",
+    "layout": "CRANEL_SINGLE_QUEC_FLASH_LAYOUT_8M_8M_OPEN",
+    "keyAlg": "rsa",
+    "hashAlg": "sha256",
+    "secureBoot": false,
+    "firmwareGenerator": {
+      "name": "crane",
+      "call-max-download-size": "60KiB",
+      "flash-max-download-size": "1MiB"
+    },
+    "fota": [
+      "system"
+    ],
+    "variants": [
+      {
+        "name": "CRANEL_A0_04MB",
+        "flashes": [
+          {
+            "name": "qspi",
+            "port": "QSPI",
+            "flash": "QSPI_NOR_4MB_B64KB_S4KB_P256"
+          }
+        ]
+      },
+      {
+        "name": "CRANEL_A0_08MB",
+        "flashes": [
+          {
+            "name": "qspi",
+            "port": "QSPI",
+            "flash": "QSPI_NOR_8MB_B64KB_S4KB_P256"
+          },
+          {
+            "name": "spi",
+            "port": "SSP0",
+            "flash": "SPI_NOR_8MB_B64KB_S4KB_P256"
+          }
+        ]
+      }
+    ]
+  }
+  

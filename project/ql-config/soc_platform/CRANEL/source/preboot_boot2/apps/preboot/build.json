@@ -1,0 +1,38 @@
+[
+  {
+    "board": "crane",
+    "path": "2020.07.30",
+    "description": "CraneG/CraneM A0 (ASR 3603, 1603)",
+    "parameters": "AROM_VERSION=20200730"
+  },
+  {
+    "board": "crane",
+    "path": "2021.10.16",
+    "description": "CraneL A0 (ASR 1606)",
+    "parameters": "AROM_VERSION=20211016"
+  },
+  {
+    "board": "crane",
+    "path": "2022.04.18",
+    "description": "CraneLS Z1 (ASR 1609)",
+    "parameters": "AROM_VERSION=20220418"
+  },
+  {
+    "board": "crane",
+    "path": "2022.08.08",
+    "description": "CraneW CR5 (ASR 3606)",
+    "parameters": "AROM_VERSION=20220808"
+  },
+  {
+    "board": "cranew-mcu",
+    "path": "2021.10.10",
+    "description": "CraneW MCU Z1 (ASR 3606)",
+    "parameters": "AROM_VERSION=20211010"
+  },
+  {
+    "board": "cranew-mcu",
+    "path": "2022.07.28",
+    "description": "CraneW MCU Z2 (ASR 3606)",
+    "parameters": "AROM_VERSION=20220728"
+  }
+]

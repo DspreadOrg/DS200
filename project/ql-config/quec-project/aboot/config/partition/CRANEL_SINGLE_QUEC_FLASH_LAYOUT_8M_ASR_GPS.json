@@ -1,0 +1,127 @@
+{
+  "name": "CRANEL_SINGLE_QUEC_FLASH_LAYOUT_8M_ASR_GPS",
+  "partitions": [
+    {
+      "name": "qspi",
+      "format": "flash",
+      "vstart": "0x80000000",
+      "partitions": [
+        {
+          "name": "bootloader",
+          "format": "ubi",
+          "size": "88KiB"
+        },
+        {
+          "name": "system",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "ptable",
+              "format": "raw",
+              "size": "4KiB"
+            },
+            {
+              "name": "fwcerts",
+              "format": "raw",
+              "size": "12KiB"
+            },
+            {
+              "name": "rd",
+              "format": "raw",
+              "size": "32KiB"
+            },
+            {
+              "name": "cp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "dsp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "rfbin",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "logo",
+              "format": "raw",
+              "size": "0",
+			  "disable": false
+            },
+            {
+              "name": "jacana_fw",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "jacana_pvt",
+              "format": "raw",
+              "size": "128KiB"
+            },
+			{
+			  "name": "btlst",
+              "format": "raw",
+              "size": "0"
+            },
+			{
+            "name": "btbin",
+            "format": "raw",
+            "size": "0"
+			}
+          ]
+        },
+        {
+          "name": "reserved",
+          "format": "raw",
+          "size": "-1"
+        },
+		{
+          "name": "nvm",
+          "format": "raw",
+          "size": "1024KiB"
+        },
+			{
+          "name": "erase_rd",
+          "format": "raw",
+          "size": "64KiB"
+        },
+	        {
+          "name": "updater",
+          "format": "raw",
+          "size": "96KiB"
+        },
+        {
+          "name": "fota_param",
+          "format": "raw",
+          "size": "12KiB"
+        },
+		{
+          "name": "quec_cfg",
+          "format": "raw",
+          "size": "32KiB"
+        },
+        {
+          "name": "factory",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "factory_a",
+              "format": "raw",
+              "size": "32KiB"
+            },
+            {
+              "name": "factory_b",
+              "format": "raw",
+              "size": "32KiB"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

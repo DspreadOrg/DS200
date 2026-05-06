@@ -1,0 +1,112 @@
+{
+  "name": "CRANEL_QUEC_FLASH_LAYOUT_DS_4M_HX_GNSS",
+  "partitions": [
+    {
+      "name": "qspi",
+      "format": "flash",
+      "vstart": "0x80000000",
+      "partitions": [
+        {
+          "name": "bootloader",
+          "format": "ubi",
+          "size": "88KiB"
+        },
+        {
+          "name": "system",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "ptable",
+              "format": "raw",
+              "size": "4KiB"
+            },
+            {
+              "name": "fwcerts",
+              "format": "raw",
+              "size": "12KiB"
+            },
+            {
+              "name": "rd",
+              "format": "raw",
+              "size": "32KiB"
+            },
+            {
+              "name": "cp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "dsp",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "rfbin",
+              "format": "raw",
+              "size": "0"
+            },
+            {
+              "name": "logo",
+              "format": "raw",
+              "size": "0",
+			  "disable": false
+            },
+	    {
+		  "name": "gnss_boot",
+		  "format": "raw",
+		  "size": "0"
+	    },
+            {
+		  "name": "gnss_firm",
+		  "format": "raw",
+		  "size": "0"
+	    }
+          ]
+        },
+        {
+          "name": "reserved",
+          "format": "raw",
+          "size": "-1"
+        },       
+		{
+          "name": "nvm",
+          "format": "raw",
+          "size": "280KiB"
+        },
+		{
+          "name": "erase_rd",
+          "format": "raw",
+          "size": "4KiB"
+        },
+        {
+          "name": "updater",
+          "format": "raw",
+          "size": "96KiB"
+        },
+		{
+          "name": "fota_param",
+          "format": "raw",
+          "size": "12KiB"
+        },
+		{
+          "name": "quec_cfg",
+          "format": "raw",
+          "size": "32KiB"
+        },
+        {
+          "name": "factory",
+          "format": "part",
+          "size": "0",
+          "partitions": [
+            {
+              "name": "factory_a",
+              "format": "raw",
+              "size": "32KiB"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
