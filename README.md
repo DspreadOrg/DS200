@@ -1,4 +1,4 @@
-# DS10 Project Documentation
+# DS200 Project Documentation
 
 ## Project Overview
 
@@ -93,17 +93,13 @@ DS10/
 
       run project_build.bat
 
-
-
 1. **Configure Device Type**:
    
    ```batch
    # Select moule type (1、(EC600MCN_LA) DS200 or 2、(EC600MCN_LA) DS200BT)
-   
    ```
 
 2. ```batch
-   
    # Select menu items for building
    # 1: build clean
    # 2: build app
