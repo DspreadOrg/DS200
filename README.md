@@ -85,6 +85,12 @@ DS10/
 
 ### Build Environment
 
+
+
+- **Toolchain:** Please visit the following address to download the compilation chain package "owtoolchain.zip"
+  `https://drive.google.com/file/d/1yVfltWdgUpjrMy-ondYa0T5ihrqVkj3v/view?usp=sharing`
+  
+  After downloading the toolkit, unzip it and place it in the root directory of the C drive.The final path should be :C:\owtoolchain
 - **Operating System**: Windows
 - **Compiler**: ARM Compiler 5
 - **Toolchain**: Included in the `ql-cross-tool/` directory
